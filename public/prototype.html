@@ -1,0 +1,884 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>FLURUS Abfahrtstafel</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background-color: #1a1a1a;
+    font-family:  "Arial Narrow", "Liberation Sans Narrow", sans-serif;
+    font-weight: 700;
+    overflow: hidden;
+  }
+  
+  .header-container {
+    background-color: rgb(36, 36, 36);
+    min-height: 5vh;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.862);
+    font-size: 2.5vh;
+    box-sizing: border-box;
+    padding: 1vh 0;
+  }
+  
+  .header-wrapper {
+    display: flex;
+    width: 100%;
+  }
+  
+  .header {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    padding-left: 1vh;
+    gap: 0.3vh;
+  }
+  
+  .header-translation {
+    font-size: 1.8vh;
+    font-style: italic;
+    font-weight: 400;
+    opacity: 0.7;
+  }
+  
+  .header.status { width: 11.11%; }
+  .header.flugnr { width: 11.11%; }
+  .header.ziel { width: 35.04%; }
+  .header.plan { width: 7.4%; }
+  .header.ist { width: 6%; }
+  .header.terminal { width: 6%  ; }
+  .header.schalter { width: 12.76%; }
+  .header.gate { width: 5.55%; }
+  .header.flugzeug { width: 5.55%; }
+  
+  #container {
+    flex: 1;
+    display: flex;
+    width: 100%;
+    overflow: hidden;
+  }
+  
+  .flipcontainer {
+    display: flex;
+    width: 100%;
+    overflow: hidden;
+  }
+  
+  canvas {
+    image-rendering: crisp-edges;
+    image-rendering: -webkit-optimize-contrast;
+    background: #1c1c1c;
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+</style>
+</head>
+<body>
+<header style="text-align: center; font-size: 4vh; font-weight: 900; color: white; font-family: Bahnschrift;">STUTTGART AIRPORT</header>
+<header class="header-container">
+  <div class="header-wrapper" id="headerWrapper">
+    <div class="header status">
+      <span>Status</span>
+      <span class="header-translation">Status</span>
+    </div>
+    <div class="header flugnr">
+      <span>Flug Nr.</span>
+      <span class="header-translation">Flight No.</span>
+    </div>
+    <div class="header ziel">
+      <span>Ziel</span>
+      <span class="header-translation">Destination</span>
+    </div>
+    <div class="header plan">
+      <span>Plan</span>
+      <span class="header-translation">Sched.</span>
+    </div>
+    <div class="header ist">
+      <span>Ist</span>
+      <span class="header-translation">Actual</span>
+    </div>
+    <div class="header terminal">
+      <span>Terminal</span>
+      <span class="header-translation">Terminal</span>
+    </div>
+    <div class="header schalter">
+      <span>Schalter</span>
+      <span class="header-translation">Check-in Counter</span>
+    </div>
+    <div class="header gate">
+      <span>Gate</span>
+      <span class="header-translation">Gate</span>
+    </div>
+    <div class="header flugzeug">
+      <span>Flzg.</span>
+      <span class="header-translation">Aircraft</span>
+    </div>
+  </div>
+</header>
+<div id="container">
+  <div class="flipcontainer">
+    <canvas id="board"></canvas>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ==================== CONFIGURATION ==================== */
+const CONFIG = {
+  // Board dimensions
+  cols: 48,
+  rows: 15,
+  rowLayout: [6, 20, 4, 4, 1, 7, 3, 3], // blocks per row: flight#, dest, plan, actual, term, check-in, gate, aircraft (status separate)
+  statusTileWidth: 6, // Status tile spans 6 regular tile widths
+  
+  // Tile dimensions
+  tileWidth: 38,
+  tileHeight: 64,
+  tileGap: 5,
+  blockSpacing: 30,
+  
+  // Animation
+  wipeDuration: 100, // milliseconds per flip (≈15 flips/second)
+  wipeLineThickness: 10,
+  wipeLineShadowBlur: 10,
+  wipeLineShadowOffsetY: 3,
+  
+  // Characters (empty space first, then special chars, then alphanumeric, then umlauts)
+  charset: ' *./-()ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ0123456789',
+  
+  // Colors
+  bgColor: '#1c1c1c',
+  tileDark: '#0f1113',
+  tileLight: '#222528',
+  textColor: '#f2f0e6',
+  hingeColor: '#0b0b0d',
+  wipeLineColor: 'rgba(0, 0, 0, 0.7)',
+  wipeLineShadowColor: 'rgba(0, 0, 0, 0.95)',
+  tileBorder: '#000000',
+  tileBorderWidth: 2,
+  
+  // Typography
+  fontFamily: '"Arial Narrow", "Helvetica Neue", "Impact", sans-serif',
+  fontWeight: 700,
+  regularFontSize: 0.80, // Multiplier of tileHeight
+  minuteFontSize: 0.50, // Multiplier of tileHeight for minute digits
+  statusFontSize: 0.60, // Multiplier of tileHeight for status text
+  statusFontWeight: 600,
+  textShadowColor: 'rgba(0,0,0,0.6)',
+  textShadowBlur: 1,
+  textShadowOffsetY: 1,
+  
+  // Hinge
+  hingeThickness: 1,
+  hingeOffset: 0.25 // Offset from center (0.25 = midY - 0.25)
+};
+
+/* ==================== CANVAS SETUP ==================== */
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d', { alpha: false });
+
+// Calculate board dimensions with block spacing
+function calculateBoardDimensions() {
+  // Start with status tile width
+  const statusTileWidth = CONFIG.tileWidth * CONFIG.statusTileWidth + CONFIG.tileGap * (CONFIG.statusTileWidth - 1);
+  let totalWidth = statusTileWidth + CONFIG.tileGap; // Status tile + gap
+  
+  const blockPositions = [0]; // First block starts at 0 (after status)
+  
+  // Calculate positions for the 48 regular tiles
+  for (let i = 0; i < CONFIG.rowLayout.length; i++) {
+    const blockSize = CONFIG.rowLayout[i];
+    totalWidth += blockSize * CONFIG.tileWidth + (blockSize - 1) * CONFIG.tileGap;
+    if (i < CONFIG.rowLayout.length - 1) {
+      totalWidth += CONFIG.blockSpacing;
+      blockPositions.push(totalWidth - statusTileWidth - CONFIG.tileGap); // Relative to start of regular tiles
+    }
+  }
+  
+  const totalHeight = CONFIG.rows * CONFIG.tileHeight + (CONFIG.rows - 1) * CONFIG.tileGap;
+  
+  return { width: totalWidth, height: totalHeight, blockPositions };
+}
+
+const boardDimensions = calculateBoardDimensions();
+canvas.width = boardDimensions.width;
+canvas.height = boardDimensions.height;
+
+// Scale canvas to fit viewport (canvas is full width via CSS)
+function resizeCanvas() {
+  // Header is already full width via CSS, no JS needed
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+/* ==================== GLYPH CACHE ==================== */
+const glyphCache = new Map();
+
+function createGlyph(char, isMinute = false) {
+  const cv = document.createElement('canvas');
+  const c = cv.getContext('2d');
+  cv.width = CONFIG.tileWidth;
+  cv.height = CONFIG.tileHeight;
+  
+  // Black border
+  c.fillStyle = CONFIG.tileBorder;
+  c.fillRect(0, 0, CONFIG.tileWidth, CONFIG.tileHeight);
+  
+  // Gradient background (inset for border)
+  const borderW = CONFIG.tileBorderWidth;
+  const gradient = c.createLinearGradient(0, borderW, 0, CONFIG.tileHeight - borderW);
+  gradient.addColorStop(0, CONFIG.tileLight);
+  gradient.addColorStop(1, CONFIG.tileDark);
+  c.fillStyle = gradient;
+  c.fillRect(borderW, borderW, CONFIG.tileWidth - borderW * 2, CONFIG.tileHeight - borderW * 2);
+  
+  // Character - drawn BEFORE hinge so it appears behind
+  if (isMinute) {
+    // Minutes: smaller, upper half only
+    const fontSize = Math.floor(CONFIG.tileHeight * CONFIG.minuteFontSize);
+    c.font = `${CONFIG.fontWeight} ${fontSize}px ${CONFIG.fontFamily}`;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillStyle = CONFIG.textColor;
+    c.shadowColor = CONFIG.textShadowColor;
+    c.shadowBlur = CONFIG.textShadowBlur;
+    c.shadowOffsetY = CONFIG.textShadowOffsetY;
+    c.fillText(char, CONFIG.tileWidth / 2, CONFIG.tileHeight * 0.25);
+  } else {
+    // Regular characters: larger, bolder, centered
+    const fontSize = Math.floor(CONFIG.tileHeight * CONFIG.regularFontSize);
+    c.font = `${CONFIG.fontWeight} ${fontSize}px ${CONFIG.fontFamily}`;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillStyle = CONFIG.textColor;
+    c.shadowColor = CONFIG.textShadowColor;
+    c.shadowBlur = CONFIG.textShadowBlur;
+    c.shadowOffsetY = CONFIG.textShadowOffsetY;
+    c.fillText(char, CONFIG.tileWidth / 2, CONFIG.tileHeight / 2);
+  }
+  
+  // Hinge line - drawn ON TOP so it cuts through the letter
+  const midY = Math.floor(CONFIG.tileHeight / 2);
+  c.fillStyle = CONFIG.hingeColor;
+  c.fillRect(0, midY - CONFIG.hingeOffset, CONFIG.tileWidth, CONFIG.hingeThickness);
+  
+  return cv;
+}
+
+// Pre-cache all glyphs (regular)
+CONFIG.charset.split('').forEach(char => {
+  glyphCache.set(char, createGlyph(char, false));
+});
+
+// Pre-cache minute digits (smaller, upper-half only)
+const minuteDigits = '0123456789';
+minuteDigits.split('').forEach(char => {
+  glyphCache.set(char + '_minute', createGlyph(char, true));
+});
+
+// Create wide status tile glyph
+function createStatusGlyph(text) {
+  const cv = document.createElement('canvas');
+  const c = cv.getContext('2d');
+  const statusWidth = CONFIG.tileWidth * 6 + CONFIG.tileGap * 5; // 6 tiles wide
+  cv.width = statusWidth;
+  cv.height = CONFIG.tileHeight;
+  
+  // Black border
+  c.fillStyle = CONFIG.tileBorder;
+  c.fillRect(0, 0, statusWidth, CONFIG.tileHeight);
+  
+  // Gradient background (inset for border)
+  const borderW = CONFIG.tileBorderWidth;
+  const gradient = c.createLinearGradient(0, borderW, 0, CONFIG.tileHeight - borderW);
+  gradient.addColorStop(0, CONFIG.tileLight);
+  gradient.addColorStop(1, CONFIG.tileDark);
+  c.fillStyle = gradient;
+  c.fillRect(borderW, borderW, statusWidth - borderW * 2, CONFIG.tileHeight - borderW * 2);
+  
+  // Status text - large font to match tile height
+  const fontSize = Math.floor(CONFIG.tileHeight * CONFIG.statusFontSize);
+  c.font = `${CONFIG.statusFontWeight} ${fontSize}px ${CONFIG.fontFamily}`;
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  c.fillStyle = CONFIG.textColor;
+  c.shadowColor = CONFIG.textShadowColor;
+  c.shadowBlur = CONFIG.textShadowBlur;
+  c.shadowOffsetY = CONFIG.textShadowOffsetY;
+  c.fillText(text, statusWidth / 2, CONFIG.tileHeight / 2);
+  
+  // Hinge line
+  const midY = Math.floor(CONFIG.tileHeight / 2);
+  c.fillStyle = CONFIG.hingeColor;
+  c.fillRect(0, midY - 0.5, statusWidth, CONFIG.hingeThickness);
+  
+  return cv;
+}
+
+// Pre-cache common status messages
+const statusMessages = [
+  ' ',
+  'BOARDING',
+  'DEPARTED',
+  'VERSPÄTET',
+  'ANNULIERT',
+  'GATE OPEN',
+  'GATE CLOSED',
+  'CHECK-IN',
+  'FINAL CALL'
+];
+
+statusMessages.forEach(status => {
+  glyphCache.set('STATUS:' + status, createStatusGlyph(status));
+});
+
+/* ==================== TILE CLASS ==================== */
+class Tile {
+  constructor(col, row) {
+    this.col = col;
+    this.row = row;
+    this.x = this.calculateX(col);
+    this.y = row * (CONFIG.tileHeight + CONFIG.tileGap);
+    
+    this.current = ' ';
+    this.sequence = []; // Characters to flip through
+    this.sequenceIndex = 0;
+    this.flipStartTime = 0;
+    this.isAnimating = false;
+  }
+  
+  calculateX(col) {
+    // Status tile (col === -1) goes at the beginning
+    if (col === -1) {
+      return 0;
+    }
+    
+    // Regular tiles start after the status tile width
+    const statusTileWidth = CONFIG.tileWidth * CONFIG.statusTileWidth + CONFIG.tileGap * (CONFIG.statusTileWidth - 1);
+    const statusTotalWidth = statusTileWidth + CONFIG.tileGap;
+    
+    // Calculate position in the layout blocks
+    let x = statusTotalWidth; // Start after status tile
+    let accumulated = 0;
+    
+    for (let i = 0; i < CONFIG.rowLayout.length; i++) {
+      if (col < accumulated + CONFIG.rowLayout[i]) {
+        const posInBlock = col - accumulated;
+        x = statusTotalWidth + boardDimensions.blockPositions[i] + posInBlock * (CONFIG.tileWidth + CONFIG.tileGap);
+        return x;
+      }
+      accumulated += CONFIG.rowLayout[i];
+    }
+    return statusTotalWidth;
+  }
+  
+  startWipe(targetChar, startTime) {
+    if (this.current === targetChar) return;
+    
+    // Build sequence from current to target
+    const isFromMinute = this.current.endsWith('_minute');
+    const isToMinute = targetChar.endsWith('_minute');
+    const fromBase = isFromMinute ? this.current.replace('_minute', '') : this.current;
+    const toBase = isToMinute ? targetChar.replace('_minute', '') : targetChar;
+    
+    const fromIdx = CONFIG.charset.indexOf(fromBase);
+    const toIdx = CONFIG.charset.indexOf(toBase);
+    
+    if (fromIdx === -1 || toIdx === -1) {
+      this.current = targetChar;
+      return;
+    }
+    
+    // Build sequence
+    this.sequence = [];
+    let idx = fromIdx;
+    while (idx !== toIdx) {
+      idx = (idx + 1) % CONFIG.charset.length;
+      const char = CONFIG.charset[idx];
+      this.sequence.push(isToMinute ? char + '_minute' : char);
+    }
+    
+    if (this.sequence.length > 0) {
+      this.sequenceIndex = 0;
+      this.flipStartTime = startTime;
+      this.isAnimating = true;
+    }
+  }
+  
+  update(now) {
+    if (!this.isAnimating || this.sequence.length === 0) return;
+    
+    const elapsed = now - this.flipStartTime;
+    const targetIndex = Math.floor(elapsed / CONFIG.wipeDuration);
+    
+    if (targetIndex >= this.sequence.length) {
+      // Animation complete
+      this.current = this.sequence[this.sequence.length - 1];
+      this.isAnimating = false;
+      this.sequence = [];
+      this.sequenceIndex = 0;
+    } else if (targetIndex > this.sequenceIndex) {
+      // Move to next character
+      this.sequenceIndex = targetIndex;
+      this.current = this.sequence[this.sequenceIndex];
+    }
+  }
+  
+  draw(ctx) {
+    const glyph = glyphCache.get(this.current) || glyphCache.get(' ');
+    const tileWidth = this.isStatusTile ? 
+      (CONFIG.tileWidth * CONFIG.statusTileWidth + CONFIG.tileGap * (CONFIG.statusTileWidth - 1)) : 
+      CONFIG.tileWidth;
+    
+    if (!this.isAnimating || this.sequence.length === 0) {
+      // Static tile
+      ctx.drawImage(glyph, this.x, this.y, tileWidth, CONFIG.tileHeight);
+      return;
+    }
+    
+    // Calculate wipe progress for current flip
+    const now = performance.now();
+    
+    // Don't start animation until scheduled start time
+    if (now < this.flipStartTime) {
+      ctx.drawImage(glyph, this.x, this.y, tileWidth, CONFIG.tileHeight);
+      return;
+    }
+    
+    const elapsed = now - this.flipStartTime;
+    const flipIndex = Math.floor(elapsed / CONFIG.wipeDuration);
+    const flipProgress = (elapsed % CONFIG.wipeDuration) / CONFIG.wipeDuration;
+    
+    if (flipIndex >= this.sequence.length) {
+      ctx.drawImage(glyph, this.x, this.y, tileWidth, CONFIG.tileHeight);
+      return;
+    }
+    
+    // Get previous and current glyphs
+    const prevChar = flipIndex === 0 ? this.current : this.sequence[flipIndex - 1];
+    const currChar = this.sequence[flipIndex];
+    const prevGlyph = glyphCache.get(prevChar) || glyphCache.get(' ');
+    const currGlyph = glyphCache.get(currChar) || glyphCache.get(' ');
+    
+    // Wipe animation
+    const wipeY = this.y + CONFIG.tileHeight * flipProgress;
+    
+    // Top: new character (revealed)
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(this.x, this.y, tileWidth, wipeY - this.y);
+    ctx.clip();
+    ctx.drawImage(currGlyph, this.x, this.y, tileWidth, CONFIG.tileHeight);
+    ctx.restore();
+    
+    // Bottom: old character (not yet wiped)
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(this.x, wipeY, tileWidth, this.y + CONFIG.tileHeight - wipeY);
+    ctx.clip();
+    ctx.drawImage(prevGlyph, this.x, this.y, tileWidth, CONFIG.tileHeight);
+    ctx.restore();
+    
+    // Wipe line
+    ctx.save();
+    ctx.fillStyle = CONFIG.wipeLineColor;
+    ctx.shadowColor = CONFIG.wipeLineShadowColor;
+    ctx.shadowBlur = CONFIG.wipeLineShadowBlur;
+    ctx.shadowOffsetY = CONFIG.wipeLineShadowOffsetY;
+    ctx.fillRect(this.x, wipeY - CONFIG.wipeLineThickness / 2, tileWidth, CONFIG.wipeLineThickness);
+    ctx.restore();
+  }
+}
+
+/* ==================== DATA PARSING ==================== */
+let flightData = null;
+
+// Load and parse departures data from server
+async function loadFlightData() {
+  try {
+    const response = await fetch('http://localhost:7000/api/str/departures');
+    flightData = await response.json();
+    console.log(`Loaded ${flightData.flights.length} flights from server`);
+  } catch (error) {
+    console.error('Error loading flight data:', error);
+    flightData = { flights: [] };
+  }
+}
+
+// Get upcoming flights - filter and sort on client side
+function getUpcomingFlights() {
+  if (!flightData || !flightData.flights) {
+    console.warn('No flight data available');
+    return [];
+  }
+  
+  const now = new Date();
+  // Use local date to match server's date calculation
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const currentDate = `${year}-${month}-${day}`; // YYYY-MM-DD in local timezone
+  const currentTimeInMinutes = now.getHours() * 60 + now.getMinutes();
+  
+  console.log('Current date:', currentDate, 'Current time:', currentTimeInMinutes, 'minutes');
+  console.log('Total flights from server:', flightData.flights.length);
+  
+  // Group flights by date for debugging
+  const byDate = {};
+  flightData.flights.forEach(f => {
+    if (!byDate[f.date]) byDate[f.date] = [];
+    byDate[f.date].push(f);
+  });
+  console.log('Flights by date:', Object.keys(byDate).map(d => `${d}: ${byDate[d].length}`).join(', '));
+  
+  // Filter and sort flights
+  const filtered = flightData.flights
+    .filter(flight => {
+      // Skip flights with no date or time
+      if (!flight.date || !flight.plannedTime) return false;
+      
+      // For today's flights, only show future departures
+      if (flight.date === currentDate) {
+        const [hours, minutes] = flight.plannedTime.split(':').map(Number);
+        const flightTimeInMinutes = hours * 60 + minutes;
+        return flightTimeInMinutes >= currentTimeInMinutes;
+      }
+      
+      // For future dates, show all
+      return flight.date > currentDate;
+    })
+    .sort((a, b) => {
+      // Convert date + time to proper Date objects for comparison
+      const getTimestamp = (flight) => {
+        const timeStr = flight.actualTime || flight.plannedTime;
+        if (!timeStr || !flight.date) return Infinity; // Put invalid entries at the end
+        
+        // Create Date object from date string and time string
+        const dateTimeStr = `${flight.date}T${timeStr}:00`;
+        return new Date(dateTimeStr).getTime();
+      };
+      
+      return getTimestamp(a) - getTimestamp(b);
+    });
+  
+  console.log(`Showing ${filtered.length} upcoming flights (filtered and sorted by date/time)`);
+  
+  // Debug: log first 20 flights
+  console.log('First 20 sorted flights:');
+  filtered.slice(0, 20).forEach((f, i) => {
+    const time = f.actualTime || f.plannedTime;
+    console.log(`  ${i}: ${f.date} ${time} - ${f.flightNumber} to ${f.destination}`);
+  });
+  
+  return filtered.slice(0, CONFIG.rows);
+}
+
+// Convert flight to row string: 6 + 20 + 4 + 4 + 1 + 7 + 3 + 3 = 48 columns (status rendered separately)
+function flightToRowString(flight) {
+  // Helper to clean and validate characters
+  const cleanText = (text) => {
+    return text.toUpperCase().split('').map(char => {
+      // Keep only characters in our charset
+      if (CONFIG.charset.includes(char)) return char;
+      // Replace ß with SS
+      if (char === 'ß') return 'S';
+      // Replace other characters with space
+      return ' ';
+    }).join('');
+  };
+  
+  // Helper to format time with leading zeros (no colon)
+  const formatTime = (timeStr) => {
+    if (!timeStr) return '';
+    const parts = timeStr.split(':');
+    if (parts.length === 2) {
+      const hours = parts[0].padStart(2, '0');
+      const minutes = parts[1].padStart(2, '0');
+      return hours + minutes; // No colon
+    }
+    return timeStr;
+  };
+  
+  // Column 1: Flug Nr. (6 chars) - 2 letters + 4 digits
+  // If 3 digits: "AB 123", if 4 digits: "AB1234"
+  let flightNumRaw = (flight.flightNumber || '').trim();
+  let flightNum = '';
+  
+  // Extract letters and numbers
+  const letterMatch = flightNumRaw.match(/^[A-Z]+/);
+  const numberMatch = flightNumRaw.match(/\d+$/);
+  
+  if (letterMatch && numberMatch) {
+    const letters = letterMatch[0].slice(0, 2).padEnd(2, ' ');
+    const numbers = numberMatch[0].padStart(4, '0').slice(-4);
+    
+    // If numbers are 3 digits or less, add space between letters and numbers
+    if (numberMatch[0].length <= 3) {
+      flightNum = letters + ' ' + numbers.slice(-3).padStart(3, ' ');
+    } else {
+      flightNum = letters + numbers;
+    }
+  } else {
+    flightNum = cleanText(flightNumRaw.replace(/\s+/g, ''));
+  }
+  
+  flightNum = flightNum.padEnd(6, ' ').slice(0, 6);
+  
+  // Column 2: Ziel (20 chars)
+  const destination = cleanText((flight.destination || '')).padEnd(20, ' ').slice(0, 20);
+  
+  // Column 3: Plan (4 chars) - format time with minute digits marked
+  const planTime = formatTime(flight.plannedTime || '');
+  const plan = cleanText(planTime).padEnd(4, ' ').slice(0, 4);
+  // Mark last 2 chars (minutes) with _minute suffix if not spaces
+  const planFormatted = plan[0] + plan[1] + 
+                        (plan[2] === ' ' ? ' ' : plan[2] + '_minute') + 
+                        (plan[3] === ' ' ? ' ' : plan[3] + '_minute');
+  
+  // Column 4: Ist (4 chars) - format time with minute digits marked
+  const actualTime = formatTime(flight.actualTime || '');
+  const actual = cleanText(actualTime).padEnd(4, ' ').slice(0, 4);
+  // Mark last 2 chars (minutes) with _minute suffix if not spaces
+  const actualFormatted = actual[0] + actual[1] + 
+                          (actual[2] === ' ' ? ' ' : actual[2] + '_minute') + 
+                          (actual[3] === ' ' ? ' ' : actual[3] + '_minute');
+  
+  // Column 5: Terminal (1 char)
+  const terminal = flight.terminal ? flight.terminal.replace('T', '') : ' ';
+  const term = cleanText(terminal).padEnd(1, ' ').slice(0, 1);
+  
+  // Column 6: Schalter (7 chars)
+  const checkin = cleanText((flight.checkin || '')).padEnd(7, ' ').slice(0, 7);
+  
+  // Column 7: Gate (3 chars)
+  const gate = cleanText((flight.gate || '')).padEnd(3, ' ').slice(0, 3);
+  
+  // Column 8: Flugzeug (3 chars)
+  const aircraft = cleanText((flight.aircraft || '')).padEnd(3, ' ').slice(0, 3);
+  
+  // Column 0 (first): Status (6 chars representing a single wide tile)
+  // Map status to preset messages
+  let statusText = ' ';
+  const flightStatus = (flight.status || '').toUpperCase();
+  
+  if (flightStatus.includes('BOARD')) statusText = 'BOARDING';
+  else if (flightStatus.includes('DEPART')) statusText = 'DEPARTED';
+  else if (flightStatus.includes('DELAY') || flightStatus.includes('VERSPÄT')) statusText = 'DELAYED';
+  else if (flightStatus.includes('CANCEL') || flightStatus.includes('ANNUL')) statusText = 'CANCELLED';
+  else if (flightStatus.includes('ON TIME') || flightStatus.includes('PÜNKTLICH')) statusText = 'ON TIME';
+  else if (flightStatus.includes('GATE') && flightStatus.includes('OPEN')) statusText = 'GATE OPEN';
+  else if (flightStatus.includes('GATE') && flightStatus.includes('CLOS')) statusText = 'GATE CLOSED';
+  else if (flightStatus.includes('CHECK')) statusText = 'CHECK-IN';
+  else if (flightStatus.includes('FINAL')) statusText = 'FINAL CALL';
+  
+  // Store status separately - will be rendered by renderStatus function
+  // Return only the 48 regular tiles
+  return flightNum + destination + planFormatted + actualFormatted + term + checkin + gate + aircraft;
+}
+
+/* ==================== BOARD MANAGEMENT ==================== */
+class Board {
+  constructor() {
+    this.tiles = [];
+    this.tilesByRow = [];
+    this.statusTiles = []; // Separate status tiles
+    this.initializeTiles();
+    this.hasActiveAnimations = false;
+  }
+  
+  initializeTiles() {
+    for (let row = 0; row < CONFIG.rows; row++) {
+      // Create status tile for this row (positioned separately)
+      const statusTile = new Tile(-1, row); // Use -1 to indicate it's a status tile
+      statusTile.isStatusTile = true;
+      this.statusTiles.push(statusTile);
+      this.tiles.push(statusTile);
+      
+      // Create regular tiles for this row
+      this.tilesByRow[row] = [];
+      for (let col = 0; col < CONFIG.cols; col++) {
+        const tile = new Tile(col, row);
+        this.tiles.push(tile);
+        this.tilesByRow[row].push(tile);
+      }
+    }
+  }
+  
+  // Startup animation: all tiles flip to blank with sequence
+  startupAnimation(callback) {
+    const now = performance.now();
+    let animationTime = now;
+    
+    // Flip rows from top to bottom with 100ms delay between each row
+    for (let row = 0; row < CONFIG.rows; row++) {
+      for (const tile of this.tilesByRow[row]) {
+        tile.startWipe(' ', animationTime);
+      }
+      animationTime += 100; // 100ms delay between rows
+    }
+    
+    // Calculate total animation duration and call callback when done
+    const totalDuration = animationTime - now + CONFIG.wipeDuration + 200;
+    setTimeout(callback, totalDuration);
+  }
+  
+  renderRow(rowChars, rowNumber, startTime) {
+    const rowTiles = this.tilesByRow[rowNumber];
+    let charIndex = 0;
+    let tileIndex = 0;
+    
+    // Process all 48 tiles
+    while (tileIndex < CONFIG.cols && charIndex < rowChars.length) {
+      let targetChar = rowChars[charIndex];
+      
+      // Check for _minute suffix
+      if (rowChars.substring(charIndex + 1, charIndex + 8) === '_minute') {
+        targetChar = targetChar + '_minute';
+        charIndex += 8;
+      } else {
+        charIndex++;
+      }
+      
+      rowTiles[tileIndex].startWipe(targetChar, startTime);
+      tileIndex++;
+    }
+    
+    // Fill remaining tiles with spaces
+    while (tileIndex < CONFIG.cols) {
+      rowTiles[tileIndex].startWipe(' ', startTime);
+      tileIndex++;
+    }
+  }
+  
+  renderStatus(flight, rowNumber, startTime) {
+    // Get the status tile from the statusTiles array
+    const statusTile = this.statusTiles[rowNumber];
+    
+    // Map status to single digit (0-9)
+    let statusNum = ' ';
+    const flightStatus = (flight.status || '').toUpperCase();
+    
+    if (flightStatus.includes('ON TIME') || flightStatus.includes('PÜNKTLICH')) statusNum = '0';
+    else if (flightStatus.includes('BOARD')) statusNum = '1';
+    else if (flightStatus.includes('GATE') && flightStatus.includes('OPEN')) statusNum = '2';
+    else if (flightStatus.includes('FINAL')) statusNum = '3';
+    else if (flightStatus.includes('GATE') && flightStatus.includes('CLOS')) statusNum = '4';
+    else if (flightStatus.includes('DELAY') || flightStatus.includes('VERSPÄT')) statusNum = '5';
+    else if (flightStatus.includes('DEPART')) statusNum = '6';
+    else if (flightStatus.includes('CANCEL') || flightStatus.includes('ANNUL')) statusNum = '7';
+    else if (flightStatus.includes('CHECK')) statusNum = '8';
+    
+    statusTile.startWipe(statusNum, startTime);
+  }
+  
+  loadFlights(now) {
+    const upcomingFlights = getUpcomingFlights();
+    const numRows = Math.min(upcomingFlights.length, CONFIG.rows);
+    
+    console.log(`Loading ${numRows} flights to board`);
+    console.log('Rendering these flights:');
+    
+    for (let i = 0; i < numRows; i++) {
+      const flight = upcomingFlights[i];
+      const time = flight.actualTime || flight.plannedTime;
+      console.log(`Row ${i}: ${flight.date} ${time} - ${flight.flightNumber} to ${flight.destination}`);
+      const rowChars = flightToRowString(flight);
+      // Add 100ms delay for each row (i * 100ms)
+      const rowStartTime = now + (i * 100);
+      this.renderStatus(flight, i, rowStartTime);
+      this.renderRow(rowChars, i, rowStartTime);
+    }
+  }
+  
+  update(now) {
+    this.hasActiveAnimations = false;
+    for (const tile of this.tiles) {
+      tile.update(now);
+      if (tile.isAnimating) this.hasActiveAnimations = true;
+    }
+  }
+  
+  draw(ctx) {
+    ctx.fillStyle = CONFIG.bgColor;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    for (const tile of this.tiles) {
+      tile.draw(ctx);
+    }
+  }
+}
+
+/* ==================== ANIMATION LOOP ==================== */
+const board = new Board();
+
+// Load flight data and start animation
+(async function init() {
+  await loadFlightData();
+  
+  // Start with startup flip animation
+  board.startupAnimation(() => {
+    // After startup animation completes, load and display flight data
+    board.loadFlights(performance.now());
+  });
+  
+  function animate(now) {
+    board.update(now);
+    board.draw(ctx);
+    requestAnimationFrame(animate);
+  }
+  
+  requestAnimationFrame(animate);
+})();
+
+/* ==================== PUBLIC API ==================== */
+window.flipboard = {
+  // Reload and display flight data
+  reload() {
+    board.loadFlights(performance.now());
+  },
+  
+  // Render specific row with custom text
+  renderRow(text, rowNumber) {
+    if (rowNumber < 0 || rowNumber >= CONFIG.rows) {
+      console.error(`Row ${rowNumber} out of bounds (0-${CONFIG.rows - 1})`);
+      return;
+    }
+    const chars = text.padEnd(CONFIG.cols, ' ').slice(0, CONFIG.cols).toUpperCase();
+    board.renderRow(chars, rowNumber, performance.now());
+  },
+  
+  // Get configuration
+  config: CONFIG,
+  
+  // Redraw everything
+  redraw() {
+    board.draw(ctx);
+  }
+};
+
+console.log('Flipboard API available via window.flipboard');
+console.log('Commands: flipboard.reload(), flipboard.renderRow(text, rowNum)');
+
+// Add Enter key listener to refresh board
+document.addEventListener('keydown', async (e) => {
+  if (e.key === 'Enter') {
+    console.log('🔄 Refreshing flight data...');
+    await loadFlightData();
+    board.loadFlights(performance.now());
+  }
+});
+
+</script>
+</body>
+</html>
