@@ -102,7 +102,7 @@
     </div>
     <div class="header plan">
       <span>Plan</span>
-      <span class="header-translation">Sched.</span>
+      <span class="header-translation">Scheduled</span>
     </div>
     <div class="header ist">
       <span>Ist</span>
@@ -378,7 +378,7 @@ class Tile {
     return statusTotalWidth;
   }
   
-  startWipe(targetChar, startTime) {
+  startWipe(targetChar, startTime, skipFullRotation = false) {
     // Status tiles always cycle through all preset words
     if (this.isStatusTile) {
       const presetWords = [' ', 'CHECK-IN', 'BOARDING', 'EINGESTIEGEN', 'ABGEROLLT', 'GESTARTET', 'VERSPÄTET', 'ANNULIERT', 'FINAL CALL'];
@@ -425,11 +425,15 @@ class Tile {
       return;
     }
     
-    // Build sequence - if same character, do full rotation through charset
+    // Build sequence - if same character, either skip or do full rotation
     this.sequence = [];
     let idx = fromIdx;
     
     if (this.current === targetChar) {
+      // If skip rotation is enabled (refresh mode), don't animate unchanged tiles
+      if (skipFullRotation) {
+        return; // Don't animate if character hasn't changed
+      }
       // Same character: flip through entire charset and back
       for (let i = 0; i < CONFIG.charset.length; i++) {
         idx = (idx + 1) % CONFIG.charset.length;
@@ -545,7 +549,7 @@ let flightData = null;
 // Load and parse departures data from server
 async function loadFlightData() {
   try {
-    const response = await fetch('http://localhost:7000/api/str/departures');
+    const response = await fetch('/api/str/departures');
     flightData = await response.json();
     console.log(`Loaded ${flightData.flights.length} flights from server`);
   } catch (error) {
@@ -784,7 +788,7 @@ class Board {
     setTimeout(callback, totalDuration);
   }
   
-  renderRow(rowChars, rowNumber, startTime) {
+  renderRow(rowChars, rowNumber, startTime, skipFullRotation = false) {
     const rowTiles = this.tilesByRow[rowNumber];
     let charIndex = 0;
     let tileIndex = 0;
@@ -801,13 +805,13 @@ class Board {
         charIndex++;
       }
       
-      rowTiles[tileIndex].startWipe(targetChar, startTime);
+      rowTiles[tileIndex].startWipe(targetChar, startTime, skipFullRotation);
       tileIndex++;
     }
     
     // Fill remaining tiles with spaces
     while (tileIndex < CONFIG.cols) {
-      rowTiles[tileIndex].startWipe(' ', startTime);
+      rowTiles[tileIndex].startWipe(' ', startTime, skipFullRotation);
       tileIndex++;
     }
   }
@@ -840,11 +844,11 @@ class Board {
     statusTile.startWipe(statusText, startTime);
   }
   
-  loadFlights(now) {
+  loadFlights(now, isRefresh = false) {
     const upcomingFlights = getUpcomingFlights();
     const numRows = Math.min(upcomingFlights.length, CONFIG.rows);
     
-    console.log(`Loading ${numRows} flights to board`);
+    console.log(`Loading ${numRows} flights to board (refresh mode: ${isRefresh})`);
     console.log('Rendering these flights:');
     
     for (let i = 0; i < numRows; i++) {
@@ -855,7 +859,7 @@ class Board {
       // Add 100ms delay for each row (i * 100ms)
       const rowStartTime = now + (i * 100);
       this.renderStatus(flight, i, rowStartTime);
-      this.renderRow(rowChars, i, rowStartTime);
+      this.renderRow(rowChars, i, rowStartTime, isRefresh);
     }
   }
   
@@ -905,13 +909,19 @@ const board = new Board();
   }
   
   requestAnimationFrame(animate);
+  
+  // Auto-refresh every minute
+  setInterval(async () => {
+    await loadFlightData();
+    board.loadFlights(performance.now(), true); // true = refresh mode (only flip changed tiles)
+  }, 60000); // 60000ms = 1 minute
 })();
 
 /* ==================== PUBLIC API ==================== */
 window.flipboard = {
   // Reload and display flight data
   reload() {
-    board.loadFlights(performance.now());
+    board.loadFlights(performance.now(), true); // true = refresh mode
   },
   
   // Render specific row with custom text
@@ -941,7 +951,7 @@ document.addEventListener('keydown', async (e) => {
   if (e.key === 'Enter') {
     console.log('🔄 Refreshing flight data...');
     await loadFlightData();
-    board.loadFlights(performance.now());
+    board.loadFlights(performance.now(), true); // true = refresh mode (only flip changed tiles)
   }
 });
 

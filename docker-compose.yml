@@ -1,0 +1,9 @@
+services:
+  node-server:
+    build: .
+    container_name: node-server
+    ports:
+      - "7000:7000"
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
