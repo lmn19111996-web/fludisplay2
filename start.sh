@@ -8,6 +8,7 @@ if [ ! -d ".git" ]; then
     git clone https://github.com/lmn19111996-web/fludisplay2.git
 else
     # Wenn bereits geklont, dann einfach pullen
+    cd /opt/stacks/fludisplay2
     git pull https://github.com/lmn19111996-web/fludisplay2.git
 fi
 
