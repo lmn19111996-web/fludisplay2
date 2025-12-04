@@ -1,6 +1,8 @@
 services:
   node-server:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: node-server
     ports:
       - "7000:7000"
