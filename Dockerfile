@@ -1,24 +1,24 @@
-# Basis-Image
 FROM node:24.11.1-alpine3.21
+
+# Pakete installieren (sudo, git, bash)
+RUN apk add --no-cache git bash sudo
 
 # Arbeitsverzeichnis
 WORKDIR /opt/stacks
 
-# User & Group anlegen
+# User & Gruppe erstellen
 RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 
-# Git & bash installieren
-RUN apk add --no-cache git bash
+# nextjs alle sudo-Rechte geben (ohne Passwort)
+RUN echo "nextjs ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
-# Startscript kopieren
+# Startskript kopieren
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
-# Benutzer wechseln
+# User wechseln (wir arbeiten jetzt als nächjs)
 USER nextjs
 
-# Port freigeben
 EXPOSE 7000
 
-# EntryPoint: beim Start wird start.sh ausgeführt
 ENTRYPOINT ["/start.sh"]
