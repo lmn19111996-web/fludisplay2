@@ -1,9 +1,9 @@
 services:
-  node-server:
+  fludisplay2:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: node-server
+    container_name: fludisplay2
     ports:
       - "7000:7000"
     restart: unless-stopped
